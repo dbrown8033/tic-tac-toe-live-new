@@ -1,0 +1,310 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tic-Tac-Toe Live</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      background: linear-gradient(135deg, #15142c, #302457);
+      color: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .game {
+      width: 100%;
+      max-width: 440px;
+      background: #ffffff12;
+      border: 1px solid #ffffff30;
+      border-radius: 24px;
+      padding: 28px;
+      text-align: center;
+    }
+
+    h1 { margin: 0 0 8px; font-size: 32px; }
+    .subtitle { color: #c9c4e6; margin-bottom: 24px; }
+
+    button, input {
+      font: inherit;
+      border-radius: 10px;
+      padding: 12px;
+    }
+
+    button {
+      border: 0;
+      background: #a78bfa;
+      color: #17112b;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover:not(:disabled) { background: #c4b5fd; }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+
+    input {
+      width: 100%;
+      border: 1px solid #ffffff50;
+      background: #ffffff15;
+      color: white;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      margin-bottom: 10px;
+    }
+
+    input::placeholder {
+      color: #c9c4e6;
+      letter-spacing: normal;
+    }
+
+    .join-area { margin-top: 20px; }
+    .join-area button, #createBtn { width: 100%; }
+
+    .hidden { display: none !important; }
+
+    .room-code {
+      font-size: 27px;
+      letter-spacing: 5px;
+      font-weight: bold;
+      margin: 12px 0;
+      color: #ddd6fe;
+    }
+
+    #status { min-height: 45px; line-height: 1.5; }
+
+    .scores {
+      display: flex;
+      justify-content: space-around;
+      background: #ffffff12;
+      border-radius: 12px;
+      padding: 14px 5px;
+      margin: 18px 0;
+    }
+
+    .scores strong {
+      display: block;
+      font-size: 24px;
+      margin-top: 6px;
+    }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin: 22px 0;
+    }
+
+    .cell {
+      aspect-ratio: 1;
+      font-size: 48px;
+      background: #ffffffeb;
+      color: #4c1d95;
+      border-radius: 14px;
+      padding: 0;
+    }
+
+    .cell.o { color: #be185d; }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .actions button { flex: 1; }
+    #leaveBtn { background: #ffffff25; color: white; }
+
+    #message {
+      color: #fda4af;
+      min-height: 22px;
+      font-size: 14px;
+    }
+
+    .small { color: #c9c4e6; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main class="game">
+    <h1>✕ Tic-Tac-Toe ◯</h1>
+    <p class="subtitle">Play live with a friend!</p>
+
+    <section id="home">
+      <button id="createBtn">Create a Game</button>
+
+      <div class="join-area">
+        <p>Or join a friend's game</p>
+        <input id="roomInput" maxlength="6" placeholder="Enter 6-character room code">
+        <button id="joinBtn">Join Game</button>
+      </div>
+    </section>
+
+    <section id="playing" class="hidden">
+      <p class="small">Share this room code with your friend:</p>
+      <div class="room-code" id="roomCode"></div>
+      <button id="copyBtn">Copy Room Code</button>
+
+      <p id="role"></p>
+      <p id="status" aria-live="polite">Waiting for another player...</p>
+
+      <div class="scores">
+        <div>X Wins<strong id="xScore">0</strong></div>
+        <div>Draws<strong id="drawScore">0</strong></div>
+        <div>O Wins<strong id="oScore">0</strong></div>
+      </div>
+
+      <div class="board" id="board" aria-label="Tic-Tac-Toe board"></div>
+
+      <div class="actions">
+        <button id="againBtn" disabled>Play Again</button>
+        <button id="leaveBtn">Leave Game</button>
+      </div>
+    </section>
+
+    <p id="message" role="alert"></p>
+    <p class="small" id="connection">Connecting...</p>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const home = document.getElementById("home");
+    const playing = document.getElementById("playing");
+    const board = document.getElementById("board");
+    const message = document.getElementById("message");
+
+    let myRole = null;
+    let currentRoom = null;
+    let gameState = null;
+
+    function showMessage(text) {
+      message.textContent = text;
+    }
+
+    function enterRoom(response) {
+      if (!response || !response.ok) {
+        showMessage(response?.error || "Unable to join game.");
+        return;
+      }
+
+      myRole = response.role;
+      currentRoom = response.id;
+      home.classList.add("hidden");
+      playing.classList.remove("hidden");
+
+      document.getElementById("roomCode").textContent = currentRoom;
+      document.getElementById("role").textContent =
+        "You are Player " + myRole;
+
+      showMessage("");
+    }
+
+    document.getElementById("createBtn").onclick = () => {
+      showMessage("");
+      socket.emit("create", {}, enterRoom);
+    };
+
+    document.getElementById("joinBtn").onclick = () => {
+      const code = document.getElementById("roomInput").value.trim();
+      if (code.length !== 6) {
+        showMessage("Please enter a 6-character room code.");
+        return;
+      }
+      showMessage("");
+      socket.emit("join", code, enterRoom);
+    };
+
+    document.getElementById("roomInput").addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        document.getElementById("joinBtn").click();
+      }
+    });
+
+    document.getElementById("copyBtn").onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(currentRoom);
+        showMessage("Room code copied!");
+      } catch {
+        showMessage("Select and copy the room code above.");
+      }
+    };
+
+    document.getElementById("againBtn").onclick = () => {
+      socket.emit("again");
+    };
+
+    document.getElementById("leaveBtn").onclick = () => {
+      socket.emit("leave");
+      myRole = null;
+      currentRoom = null;
+      gameState = null;
+      playing.classList.add("hidden");
+      home.classList.remove("hidden");
+      showMessage("");
+    };
+
+    for (let i = 0; i < 9; i++) {
+      const cell = document.createElement("button");
+      cell.className = "cell";
+      cell.setAttribute("aria-label", "Square " + (i + 1));
+      cell.onclick = () => socket.emit("move", i);
+      board.appendChild(cell);
+    }
+
+    socket.on("state", state => {
+      if (!currentRoom || state.id !== currentRoom) return;
+
+      gameState = state;
+
+      document.getElementById("xScore").textContent = state.scores.X;
+      document.getElementById("oScore").textContent = state.scores.O;
+      document.getElementById("drawScore").textContent = state.scores.draw;
+
+      const bothHere = state.players.X && state.players.O;
+      const status = document.getElementById("status");
+
+      if (!bothHere) {
+        status.textContent = "Waiting for another player to join...";
+      } else if (state.winner === "draw") {
+        status.textContent = "It's a draw!";
+      } else if (state.winner) {
+        status.textContent =
+          state.winner === myRole ? "You won! 🎉" : "Your friend won!";
+      } else {
+        status.textContent =
+          state.turn === myRole ? "Your turn!" : "Your friend's turn!";
+      }
+
+      document.querySelectorAll(".cell").forEach((cell, i) => {
+        const value = state.board[i];
+        cell.textContent = value || "";
+        cell.className = "cell" + (value === "O" ? " o" : "");
+        cell.disabled =
+          !bothHere ||
+          Boolean(state.winner) ||
+          state.turn !== myRole ||
+          Boolean(value);
+      });
+
+      document.getElementById("againBtn").disabled =
+        !bothHere || !state.winner;
+    });
+
+    socket.on("connect", () => {
+      document.getElementById("connection").textContent = "Connected ●";
+    });
+
+    socket.on("disconnect", () => {
+      document.getElementById("connection").textContent = "Disconnected";
+      showMessage("Connection lost. Please refresh the page to start again.");
+    });
+  </script>
+</body>
+</html>
